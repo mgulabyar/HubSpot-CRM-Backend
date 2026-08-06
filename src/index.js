@@ -151,6 +151,15 @@ app.delete("/api/hubspot/companies/:id", async (req, res) => {
 
 /* -------------------- DEALS -------------------- */
 
+const allowedDealProperties = [
+  "dealname",
+  "amount",
+  "dealstage",
+  "pipeline",
+  "closedate",
+  "description",
+];
+
 app.get("/api/hubspot/deals", async (req, res) => {
   try {
     const response = await listHubSpotObjects("deals", req.query);
@@ -166,19 +175,27 @@ app.get("/api/hubspot/deals", async (req, res) => {
 
 app.post("/api/hubspot/deals", async (req, res) => {
   try {
-    const properties = pickProperties(req.body, [
-      "dealname",
-      "amount",
-      "dealstage",
-      "pipeline",
-      "closedate",
-      "description",
-    ]);
+    const properties = pickProperties(
+      req.body,
+      allowedDealProperties
+    );
 
     if (!properties.dealname || typeof properties.dealname !== "string") {
       return res.status(400).json({
         success: false,
         message: "Deal name is required",
+      });
+    }
+
+    if (!properties.pipeline) {
+      properties.pipeline = "default";
+    }
+
+    if (!properties.dealstage) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Deal stage is required. First get valid stages from /api/hubspot/pipelines/deals/default/stages",
       });
     }
 
@@ -198,13 +215,74 @@ app.get("/api/hubspot/deals/:id", async (req, res) => {
 });
 
 app.patch("/api/hubspot/deals/:id", async (req, res) => {
-  await updateObjectById("deals", req, res);
+  try {
+    const properties = pickProperties(
+      req.body,
+      allowedDealProperties
+    );
+
+    if (Object.keys(properties).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "At least one valid deal property is required",
+      });
+    }
+
+    const response = await hubspotApi.patch(
+      `/crm/v3/objects/deals/${req.params.id}`,
+      {
+        properties: cleanProperties(properties),
+      }
+    );
+
+    res.status(200).json({
+      success: true,
+      data: response.data,
+    });
+  } catch (error) {
+    sendHubSpotError(error, res);
+  }
 });
 
 app.delete("/api/hubspot/deals/:id", async (req, res) => {
   await deleteObjectById("deals", req, res);
 });
 
+/* -------------------- DEAL PIPELINES -------------------- */
+
+app.get("/api/hubspot/pipelines/deals", async (_req, res) => {
+  try {
+    const response = await hubspotApi.get(
+      "/crm/v3/pipelines/deals"
+    );
+
+    res.status(200).json({
+      success: true,
+      data: response.data,
+    });
+  } catch (error) {
+    sendHubSpotError(error, res);
+  }
+});
+
+app.get(
+  "/api/hubspot/pipelines/deals/:pipelineId/stages",
+  async (req, res) => {
+    try {
+      const response = await hubspotApi.get(
+        `/crm/v3/pipelines/deals/${req.params.pipelineId}/stages`
+      );
+
+      res.status(200).json({
+        success: true,
+        data: response.data,
+      });
+    } catch (error) {
+      sendHubSpotError(error, res);
+    }
+  }
+);
 /* -------------------- CRM SEARCH -------------------- */
 
 app.post("/api/hubspot/:objectType/search", async (req, res) => {
