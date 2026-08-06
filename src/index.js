@@ -48,7 +48,7 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-/* -------------------- CONTACTS -------------------- */
+/* -------------------- CONTACTS ------------------- */
 
 app.get("/api/hubspot/contacts", async (req, res) => {
   try {
