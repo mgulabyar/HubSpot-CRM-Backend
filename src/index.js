@@ -225,8 +225,37 @@ app.patch("/api/hubspot/contacts/:id", async (req, res) => {
 });
 
 app.delete("/api/hubspot/contacts/:id", async (req, res) => {
-  await deleteObjectById("contacts", req, res);
+  try {
+    const contactId = String(req.params.id || "").trim();
+
+    if (!contactId) {
+      return res.status(400).json({
+        success: false,
+        message: "Contact ID is required",
+      });
+    }
+
+    await hubspotApi.delete(
+      `/crm/v3/objects/contacts/${encodeURIComponent(
+        contactId
+      )}`
+    );
+
+    return res.status(200).json({
+      success: true,
+      deletedId: contactId,
+      message: "Contact deleted successfully",
+    });
+  } catch (error) {
+    console.error(
+      "DELETE CONTACT ERROR:",
+      error.response?.data || error.message
+    );
+
+    return sendHubSpotError(error, res);
+  }
 });
+
 
 /* -------------------- CONTACT NOTES -------------------- */
 
