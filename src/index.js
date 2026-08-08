@@ -402,7 +402,6 @@ function buildNoteBody(subject = "", notes = "") {
 }
 
 /* -------------------- COMPANIES -------------------- */
-/* -------------------- COMPANIES -------------------- */
 
 const companyListProperties = [
   "name",
