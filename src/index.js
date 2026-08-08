@@ -236,9 +236,7 @@ app.delete("/api/hubspot/contacts/:id", async (req, res) => {
     }
 
     await hubspotApi.delete(
-      `/crm/v3/objects/contacts/${encodeURIComponent(
-        contactId
-      )}`
+      `/crm/v3/objects/contacts/${encodeURIComponent(contactId)}`,
     );
 
     return res.status(200).json({
@@ -249,13 +247,12 @@ app.delete("/api/hubspot/contacts/:id", async (req, res) => {
   } catch (error) {
     console.error(
       "DELETE CONTACT ERROR:",
-      error.response?.data || error.message
+      error.response?.data || error.message,
     );
 
     return sendHubSpotError(error, res);
   }
 });
-
 
 /* -------------------- CONTACT NOTES -------------------- */
 
@@ -420,32 +417,44 @@ const companyListProperties = [
 
 app.get("/api/hubspot/companies", async (req, res) => {
   try {
-    const requestedLimit = Number(
-      req.query.limit || 20
-    );
+    const requestedLimit = Number(req.query.limit || 20);
 
-    const limit = Math.min(
-      Math.max(requestedLimit, 1),
-      100
-    );
+    const limit = Math.min(Math.max(requestedLimit, 1), 100);
 
     const params = {
       limit,
       archived: req.query.archived === "true",
-      properties:
-        req.query.properties ||
-        companyListProperties.join(","),
+      properties: req.query.properties || companyListProperties.join(","),
     };
 
     if (req.query.after) {
       params.after = Number(req.query.after);
     }
 
+    const response = await hubspotApi.get("/crm/v3/objects/companies", {
+      params,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: response.data,
+    });
+  } catch (error) {
+    return sendCompanyError(error, res);
+  }
+});
+
+app.get("/api/hubspot/companies/:id", async (req, res) => {
+  try {
+    const companyId = validateHubSpotId(req.params.id);
+
     const response = await hubspotApi.get(
-      "/crm/v3/objects/companies",
+      `/crm/v3/objects/companies/${encodeURIComponent(companyId)}`,
       {
-        params,
-      }
+        params: {
+          properties: req.query.properties || companyListProperties.join(","),
+        },
+      },
     );
 
     return res.status(200).json({
@@ -457,151 +466,87 @@ app.get("/api/hubspot/companies", async (req, res) => {
   }
 });
 
-app.get(
-  "/api/hubspot/companies/:id",
-  async (req, res) => {
-    try {
-      const companyId = validateHubSpotId(
-        req.params.id
-      );
+app.post("/api/hubspot/companies", async (req, res) => {
+  try {
+    const properties = normalizeCompanyProperties(req.body);
 
-      const response = await hubspotApi.get(
-        `/crm/v3/objects/companies/${encodeURIComponent(
-          companyId
-        )}`,
-        {
-          params: {
-            properties:
-              req.query.properties ||
-              companyListProperties.join(","),
-          },
-        }
-      );
-
-      return res.status(200).json({
-        success: true,
-        data: response.data,
+    if (!properties.name) {
+      return res.status(400).json({
+        success: false,
+        message: "Company name is required",
       });
-    } catch (error) {
-      return sendCompanyError(error, res);
     }
+
+    const response = await hubspotApi.post("/crm/v3/objects/companies", {
+      properties,
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: response.data,
+    });
+  } catch (error) {
+    return sendCompanyError(error, res);
   }
-);
+});
 
-app.post(
-  "/api/hubspot/companies",
-  async (req, res) => {
-    try {
-      const properties =
-        normalizeCompanyProperties(req.body);
+app.patch("/api/hubspot/companies/:id", async (req, res) => {
+  try {
+    const companyId = validateHubSpotId(req.params.id);
 
-      if (!properties.name) {
-        return res.status(400).json({
-          success: false,
-          message: "Company name is required",
-        });
-      }
+    const properties = normalizeCompanyProperties(req.body);
 
-      const response = await hubspotApi.post(
-        "/crm/v3/objects/companies",
-        {
-          properties,
-        }
-      );
-
-      return res.status(201).json({
-        success: true,
-        data: response.data,
+    if (Object.keys(properties).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "At least one company property is required",
       });
-    } catch (error) {
-      return sendCompanyError(error, res);
     }
+
+    const response = await hubspotApi.patch(
+      `/crm/v3/objects/companies/${encodeURIComponent(companyId)}`,
+      {
+        properties,
+      },
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: response.data,
+    });
+  } catch (error) {
+    return sendCompanyError(error, res);
   }
-);
+});
 
-app.patch(
-  "/api/hubspot/companies/:id",
-  async (req, res) => {
-    try {
-      const companyId = validateHubSpotId(
-        req.params.id
-      );
+app.delete("/api/hubspot/companies/:id", async (req, res) => {
+  try {
+    const companyId = validateHubSpotId(req.params.id);
 
-      const properties =
-        normalizeCompanyProperties(req.body);
+    await hubspotApi.delete(
+      `/crm/v3/objects/companies/${encodeURIComponent(companyId)}`,
+    );
 
-      if (
-        Object.keys(properties).length === 0
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "At least one company property is required",
-        });
-      }
-
-      const response = await hubspotApi.patch(
-        `/crm/v3/objects/companies/${encodeURIComponent(
-          companyId
-        )}`,
-        {
-          properties,
-        }
-      );
-
-      return res.status(200).json({
-        success: true,
-        data: response.data,
-      });
-    } catch (error) {
-      return sendCompanyError(error, res);
-    }
+    return res.status(200).json({
+      success: true,
+      deletedId: companyId,
+      message: "Company deleted successfully",
+    });
+  } catch (error) {
+    return sendCompanyError(error, res);
   }
-);
-
-app.delete(
-  "/api/hubspot/companies/:id",
-  async (req, res) => {
-    try {
-      const companyId = validateHubSpotId(
-        req.params.id
-      );
-
-      await hubspotApi.delete(
-        `/crm/v3/objects/companies/${encodeURIComponent(
-          companyId
-        )}`
-      );
-
-      return res.status(200).json({
-        success: true,
-        deletedId: companyId,
-        message: "Company deleted successfully",
-      });
-    } catch (error) {
-      return sendCompanyError(error, res);
-    }
-  }
-);
-
+});
 
 function normalizeCompanyProperties(body = {}) {
   const properties = {};
 
-  allowedCompanyProperties.forEach(
-    (property) => {
-      const value = body[property];
+  allowedCompanyProperties.forEach((property) => {
+    const value = body[property];
 
-      if (
-        value !== undefined &&
-        value !== null &&
-        String(value).trim() !== ""
-      ) {
-        properties[property] =
-          String(value).trim();
-      }
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      properties[property] = String(value).trim();
     }
-  );
+  });
 
   return properties;
 }
@@ -610,18 +555,14 @@ function validateHubSpotId(value) {
   const id = String(value || "").trim();
 
   if (!id) {
-    const error = new Error(
-      "HubSpot object ID is required"
-    );
+    const error = new Error("HubSpot object ID is required");
 
     error.statusCode = 400;
     throw error;
   }
 
   if (!/^[0-9]+$/.test(id)) {
-    const error = new Error(
-      "HubSpot object ID must contain numbers only"
-    );
+    const error = new Error("HubSpot object ID must contain numbers only");
 
     error.statusCode = 400;
     throw error;
@@ -631,50 +572,32 @@ function validateHubSpotId(value) {
 }
 
 function sendCompanyError(error, res) {
-  const statusCode =
-    error.statusCode ||
-    error.response?.status ||
-    500;
+  const statusCode = error.statusCode || error.response?.status || 500;
 
-  const hubSpotData =
-    error.response?.data || null;
+  const hubSpotData = error.response?.data || null;
 
-  console.error(
-    "COMPANY API ERROR STATUS:",
-    statusCode
-  );
+  console.error("COMPANY API ERROR STATUS:", statusCode);
 
   console.error(
     "COMPANY API ERROR DATA:",
-    JSON.stringify(
-      hubSpotData || error.message,
-      null,
-      2
-    )
+    JSON.stringify(hubSpotData || error.message, null, 2),
   );
 
   if (hubSpotData) {
     return res.status(statusCode).json({
       success: false,
-      message:
-        hubSpotData.message ||
-        "HubSpot company request failed",
+      message: hubSpotData.message || "HubSpot company request failed",
       statusCode,
-      category:
-        hubSpotData.category || null,
-      errors:
-        hubSpotData.errors || null,
-      context:
-        hubSpotData.context || null,
+      category: hubSpotData.category || null,
+      errors: hubSpotData.errors || null,
+      context: hubSpotData.context || null,
       raw: hubSpotData,
     });
   }
 
   return res.status(statusCode).json({
     success: false,
-    message:
-      error.message ||
-      "Company request failed",
+    message: error.message || "Company request failed",
     statusCode,
   });
 }
