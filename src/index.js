@@ -701,26 +701,108 @@ app.get("/api/hubspot/pipelines/deals/:pipelineId/stages", async (req, res) => {
 
 /* -------------------- TASKS -------------------- */
 
+/* -------------------- TASKS -------------------- */
+
+const taskReadProperties = [
+  "hs_task_subject",
+  "hs_task_body",
+  "hs_timestamp",
+  "hs_task_status",
+  "hs_task_priority",
+  "hs_task_type",
+  "hubspot_owner_id",
+];
+
+const allowedTaskStatuses = [
+  "NOT_STARTED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "WAITING",
+  "DEFERRED",
+];
+
+const allowedTaskPriorities = [
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+];
+
+const allowedTaskTypes = [
+  "TODO",
+  "CALL",
+  "EMAIL",
+  "MEETING",
+];
+
 app.get("/api/hubspot/tasks", async (req, res) => {
   try {
-    const response = await listHubSpotObjects("tasks", req.query);
+    const requestedLimit = Number(
+      req.query.limit || 20
+    );
 
-    res.status(200).json({
+    const limit = Math.min(
+      Math.max(requestedLimit, 1),
+      100
+    );
+
+    const params = {
+      limit,
+      archived: req.query.archived === "true",
+      properties:
+        req.query.properties ||
+        taskReadProperties.join(","),
+    };
+
+    if (req.query.after) {
+      params.after = Number(req.query.after);
+    }
+
+    const response = await hubspotApi.get(
+      "/crm/v3/objects/tasks",
+      {
+        params,
+      }
+    );
+
+    return res.status(200).json({
       success: true,
-      data: response,
+      data: response.data,
     });
   } catch (error) {
-    sendHubSpotError(error, res);
+    return sendTaskError(error, res);
   }
 });
 
 app.get("/api/hubspot/tasks/:id", async (req, res) => {
-  await getObjectById("tasks", req, res);
+  try {
+    const taskId = validateTaskId(req.params.id);
+
+    const response = await hubspotApi.get(
+      `/crm/v3/objects/tasks/${encodeURIComponent(
+        taskId
+      )}`,
+      {
+        params: {
+          properties: taskReadProperties.join(","),
+        },
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: response.data,
+    });
+  } catch (error) {
+    return sendTaskError(error, res);
+  }
 });
 
 app.post("/api/hubspot/tasks", async (req, res) => {
   try {
-    const properties = pickProperties(req.body, allowedTaskProperties);
+    const properties = normalizeTaskProperties(
+      req.body,
+      true
+    );
 
     if (!properties.hs_task_subject) {
       return res.status(400).json({
@@ -729,43 +811,287 @@ app.post("/api/hubspot/tasks", async (req, res) => {
       });
     }
 
-    if (!properties.hs_timestamp) {
-      properties.hs_timestamp = new Date().toISOString();
+    const task = await createHubSpotObject(
+      "tasks",
+      properties
+    );
+
+    let associationWarning = null;
+
+    const {
+      associatedObjectType,
+      associatedObjectId,
+    } = req.body;
+
+    if (
+      associatedObjectType &&
+      associatedObjectId
+    ) {
+      try {
+        await createDefaultAssociation(
+          "tasks",
+          task.id,
+          associatedObjectType,
+          associatedObjectId
+        );
+      } catch (associationError) {
+        console.error(
+          "TASK ASSOCIATION ERROR:",
+          associationError.response?.data ||
+            associationError.message
+        );
+
+        associationWarning =
+          "Task created, but record association failed.";
+      }
     }
 
-    if (!properties.hs_task_status) {
-      properties.hs_task_status = "NOT_STARTED";
-    }
-
-    const task = await createHubSpotObject("tasks", properties);
-
-    const { associatedObjectType, associatedObjectId } = req.body;
-
-    if (associatedObjectType && associatedObjectId) {
-      await createDefaultAssociation(
-        "tasks",
-        task.id,
-        associatedObjectType,
-        associatedObjectId,
-      );
-    }
-
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       data: task,
+      warning: associationWarning,
     });
   } catch (error) {
-    sendHubSpotError(error, res);
+    return sendTaskError(error, res);
   }
 });
 
 app.patch("/api/hubspot/tasks/:id", async (req, res) => {
-  await updateObjectById("tasks", req, res);
+  try {
+    const taskId = validateTaskId(req.params.id);
+
+    const properties = normalizeTaskProperties(
+      req.body,
+      false
+    );
+
+    if (
+      Object.keys(properties).length === 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "At least one task property is required",
+      });
+    }
+
+    const response = await hubspotApi.patch(
+      `/crm/v3/objects/tasks/${encodeURIComponent(
+        taskId
+      )}`,
+      {
+        properties,
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: response.data,
+    });
+  } catch (error) {
+    return sendTaskError(error, res);
+  }
 });
 
 app.delete("/api/hubspot/tasks/:id", async (req, res) => {
-  await deleteObjectById("tasks", req, res);
+  try {
+    const taskId = validateTaskId(req.params.id);
+
+    await hubspotApi.delete(
+      `/crm/v3/objects/tasks/${encodeURIComponent(
+        taskId
+      )}`
+    );
+
+    return res.status(200).json({
+      success: true,
+      deletedId: taskId,
+      message: "Task deleted successfully",
+    });
+  } catch (error) {
+    return sendTaskError(error, res);
+  }
 });
+
+function normalizeTaskProperties(
+  body = {},
+  isCreate = false
+) {
+  const properties = {};
+
+  allowedTaskProperties.forEach(
+    (property) => {
+      const value = body[property];
+
+      if (
+        value !== undefined &&
+        value !== null &&
+        String(value).trim() !== ""
+      ) {
+        properties[property] =
+          String(value).trim();
+      }
+    }
+  );
+
+  if (!properties.hs_task_status) {
+    if (isCreate) {
+      properties.hs_task_status =
+        "NOT_STARTED";
+    }
+  } else if (
+    !allowedTaskStatuses.includes(
+      properties.hs_task_status
+    )
+  ) {
+    const error = new Error(
+      `Invalid task status. Allowed values: ${allowedTaskStatuses.join(
+        ", "
+      )}`
+    );
+
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!properties.hs_task_priority) {
+    if (isCreate) {
+      properties.hs_task_priority =
+        "MEDIUM";
+    }
+  } else if (
+    !allowedTaskPriorities.includes(
+      properties.hs_task_priority
+    )
+  ) {
+    const error = new Error(
+      `Invalid task priority. Allowed values: ${allowedTaskPriorities.join(
+        ", "
+      )}`
+    );
+
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!properties.hs_task_type) {
+    if (isCreate) {
+      properties.hs_task_type = "TODO";
+    }
+  } else if (
+    !allowedTaskTypes.includes(
+      properties.hs_task_type
+    )
+  ) {
+    const error = new Error(
+      `Invalid task type. Allowed values: ${allowedTaskTypes.join(
+        ", "
+      )}`
+    );
+
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!properties.hs_timestamp) {
+    if (isCreate) {
+      properties.hs_timestamp =
+        new Date().toISOString();
+    }
+  } else {
+    const parsedDate = new Date(
+      properties.hs_timestamp
+    );
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      const error = new Error(
+        "Invalid task date/time"
+      );
+
+      error.statusCode = 400;
+      throw error;
+    }
+
+    properties.hs_timestamp =
+      parsedDate.toISOString();
+  }
+
+  return properties;
+}
+
+function validateTaskId(value) {
+  const id = String(value || "").trim();
+
+  if (!id) {
+    const error = new Error(
+      "Task ID is required"
+    );
+
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!/^[0-9]+$/.test(id)) {
+    const error = new Error(
+      "Task ID must contain numbers only"
+    );
+
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return id;
+}
+
+function sendTaskError(error, res) {
+  const statusCode =
+    error.statusCode ||
+    error.response?.status ||
+    500;
+
+  const hubSpotData =
+    error.response?.data || null;
+
+  console.error(
+    "TASK API ERROR STATUS:",
+    statusCode
+  );
+
+  console.error(
+    "TASK API ERROR DATA:",
+    JSON.stringify(
+      hubSpotData || error.message,
+      null,
+      2
+    )
+  );
+
+  if (hubSpotData) {
+    return res.status(statusCode).json({
+      success: false,
+      message:
+        hubSpotData.message ||
+        "HubSpot task request failed",
+      statusCode,
+      category:
+        hubSpotData.category || null,
+      errors:
+        hubSpotData.errors || null,
+      context:
+        hubSpotData.context || null,
+      raw: hubSpotData,
+    });
+  }
+
+  return res.status(statusCode).json({
+    success: false,
+    message:
+      error.message ||
+      "Task request failed",
+    statusCode,
+  });
+}
+
 
 /* -------------------- SEARCH -------------------- */
 
