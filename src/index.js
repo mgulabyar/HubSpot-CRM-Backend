@@ -1138,74 +1138,354 @@ app.post("/api/hubspot/:objectType/search", async (req, res) => {
 
 /* -------------------- ASSOCIATIONS -------------------- */
 
+/* -------------------- ASSOCIATIONS -------------------- */
+
+const allowedAssociationTypes = [
+  "contacts",
+  "companies",
+  "deals",
+  "tasks",
+];
+
 app.get(
   "/api/hubspot/associations/:fromType/:fromId/:toType",
   async (req, res) => {
     try {
+      const fromType =
+        validateAssociationType(
+          req.params.fromType
+        );
+
+      const toType =
+        validateAssociationType(
+          req.params.toType
+        );
+
+      const fromId =
+        validateAssociationId(
+          req.params.fromId,
+          "Source record ID"
+        );
+
       const response = await hubspotApi.get(
-        `/crm/v4/objects/${req.params.fromType}/${req.params.fromId}/associations/${req.params.toType}`,
+        `/crm/v4/objects/${encodeURIComponent(
+          fromType
+        )}/${encodeURIComponent(
+          fromId
+        )}/associations/${encodeURIComponent(
+          toType
+        )}`
       );
 
-      res.status(200).json({
+      return res.status(200).json({
         success: true,
         data: response.data,
       });
     } catch (error) {
-      sendHubSpotError(error, res);
+      return sendAssociationError(
+        error,
+        res
+      );
     }
-  },
+  }
 );
 
-app.post("/api/hubspot/associations", async (req, res) => {
-  try {
-    const { fromType, fromId, toType, toId } = req.body;
+app.post(
+  "/api/hubspot/associations",
+  async (req, res) => {
+    try {
+      const payload =
+        validateAssociationPayload(
+          req.body
+        );
 
-    if (!fromType || !fromId || !toType || !toId) {
-      return res.status(400).json({
-        success: false,
-        message: "fromType, fromId, toType and toId are required",
+      if (
+        payload.fromType ===
+          payload.toType &&
+        payload.fromId === payload.toId
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "A record cannot be associated with itself.",
+        });
+      }
+
+      const response =
+        await createAssociationLink(
+          payload
+        );
+
+      return res.status(201).json({
+        success: true,
+        data: response,
+        association: payload,
       });
+    } catch (error) {
+      return sendAssociationError(
+        error,
+        res
+      );
     }
+  }
+);
 
-    const response = await createDefaultAssociation(
-      fromType,
-      fromId,
-      toType,
-      toId,
+app.delete(
+  "/api/hubspot/associations",
+  async (req, res) => {
+    try {
+      const payload =
+        validateAssociationPayload(
+          req.body
+        );
+
+      await hubspotApi.delete(
+        `/crm/v4/objects/${encodeURIComponent(
+          payload.fromType
+        )}/${encodeURIComponent(
+          payload.fromId
+        )}/associations/${encodeURIComponent(
+          payload.toType
+        )}/${encodeURIComponent(
+          payload.toId
+        )}`
+      );
+
+      return res.status(200).json({
+        success: true,
+        deletedAssociation: payload,
+        message:
+          "Association deleted successfully",
+      });
+    } catch (error) {
+      return sendAssociationError(
+        error,
+        res
+      );
+    }
+  }
+);
+
+function validateAssociationType(
+  value
+) {
+  const objectType = String(
+    value || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  if (
+    !allowedAssociationTypes.includes(
+      objectType
+    )
+  ) {
+    const error = new Error(
+      `Invalid association object type. Allowed values: ${allowedAssociationTypes.join(
+        ", "
+      )}`
     );
 
-    res.status(201).json({
-      success: true,
-      data: response,
-    });
-  } catch (error) {
-    sendHubSpotError(error, res);
+    error.statusCode = 400;
+    throw error;
   }
-});
 
-app.delete("/api/hubspot/associations", async (req, res) => {
-  try {
-    const { fromType, fromId, toType, toId } = req.body;
+  return objectType;
+}
 
-    if (!fromType || !fromId || !toType || !toId) {
-      return res.status(400).json({
-        success: false,
-        message: "fromType, fromId, toType and toId are required",
-      });
-    }
+function validateAssociationId(
+  value,
+  label = "Record ID"
+) {
+  const id = String(value || "")
+    .replace(/\s+/g, "")
+    .trim();
 
-    await hubspotApi.delete(
-      `/crm/v4/objects/${fromType}/${fromId}/associations/${toType}/${toId}`,
+  if (!id) {
+    const error = new Error(
+      `${label} is required`
     );
 
-    res.status(200).json({
-      success: true,
-      message: "Association deleted successfully",
-    });
-  } catch (error) {
-    sendHubSpotError(error, res);
+    error.statusCode = 400;
+    throw error;
   }
-});
+
+  if (!/^[0-9]+$/.test(id)) {
+    const error = new Error(
+      `${label} must contain numbers only`
+    );
+
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return id;
+}
+
+function validateAssociationPayload(
+  body = {}
+) {
+  const fromType =
+    validateAssociationType(
+      body.fromType
+    );
+
+  const toType =
+    validateAssociationType(
+      body.toType
+    );
+
+  const fromId =
+    validateAssociationId(
+      body.fromId,
+      "Source record ID"
+    );
+
+  const toId =
+    validateAssociationId(
+      body.toId,
+      "Target record ID"
+    );
+
+  return {
+    fromType,
+    fromId,
+    toType,
+    toId,
+  };
+}
+
+async function createAssociationLink(
+  payload
+) {
+  const labelsResponse =
+    await hubspotApi.get(
+      `/crm/v4/associations/${encodeURIComponent(
+        payload.fromType
+      )}/${encodeURIComponent(
+        payload.toType
+      )}/labels`
+    );
+
+  const labels =
+    labelsResponse.data.results || [];
+
+  if (labels.length === 0) {
+    const error = new Error(
+      `No valid association type exists between ${payload.fromType} and ${payload.toType}`
+    );
+
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const selectedLabel =
+    labels.find(
+      (item) =>
+        item.category === "HUBSPOT_DEFINED"
+    ) || labels[0];
+
+  if (!selectedLabel?.typeId) {
+    const error = new Error(
+      "HubSpot association type ID was not found."
+    );
+
+    error.statusCode = 400;
+    throw error;
+  }
+
+  console.log(
+    "USING ASSOCIATION TYPE:",
+    JSON.stringify(
+      {
+        fromType: payload.fromType,
+        toType: payload.toType,
+        category:
+          selectedLabel.category,
+        typeId: selectedLabel.typeId,
+        label: selectedLabel.label,
+      },
+      null,
+      2
+    )
+  );
+
+  const response = await hubspotApi.put(
+    `/crm/v4/objects/${encodeURIComponent(
+      payload.fromType
+    )}/${encodeURIComponent(
+      payload.fromId
+    )}/associations/${encodeURIComponent(
+      payload.toType
+    )}/${encodeURIComponent(
+      payload.toId
+    )}`,
+    [
+      {
+        associationCategory:
+          selectedLabel.category,
+        associationTypeId:
+          selectedLabel.typeId,
+      },
+    ]
+  );
+
+  return response.data;
+}
+
+
+function sendAssociationError(
+  error,
+  res
+) {
+  const statusCode =
+    error.statusCode ||
+    error.response?.status ||
+    500;
+
+  const hubSpotData =
+    error.response?.data || null;
+
+  console.error(
+    "ASSOCIATION API ERROR STATUS:",
+    statusCode
+  );
+
+  console.error(
+    "ASSOCIATION API ERROR DATA:",
+    JSON.stringify(
+      hubSpotData || error.message,
+      null,
+      2
+    )
+  );
+
+  if (hubSpotData) {
+    return res.status(statusCode).json({
+      success: false,
+      message:
+        hubSpotData.message ||
+        "HubSpot association request failed",
+      statusCode,
+      category:
+        hubSpotData.category || null,
+      errors:
+        hubSpotData.errors || null,
+      context:
+        hubSpotData.context || null,
+      raw: hubSpotData,
+    });
+  }
+
+  return res.status(statusCode).json({
+    success: false,
+    message:
+      error.message ||
+      "Association request failed",
+    statusCode,
+  });
+}
+
 
 async function createDefaultAssociation(fromType, fromId, toType, toId) {
   const response = await hubspotApi.put(
