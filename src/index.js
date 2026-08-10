@@ -721,48 +721,29 @@ const allowedTaskStatuses = [
   "DEFERRED",
 ];
 
-const allowedTaskPriorities = [
-  "LOW",
-  "MEDIUM",
-  "HIGH",
-];
+const allowedTaskPriorities = ["LOW", "MEDIUM", "HIGH"];
 
-const allowedTaskTypes = [
-  "TODO",
-  "CALL",
-  "EMAIL",
-  "MEETING",
-];
+const allowedTaskTypes = ["TODO", "CALL", "EMAIL", "MEETING"];
 
 app.get("/api/hubspot/tasks", async (req, res) => {
   try {
-    const requestedLimit = Number(
-      req.query.limit || 20
-    );
+    const requestedLimit = Number(req.query.limit || 20);
 
-    const limit = Math.min(
-      Math.max(requestedLimit, 1),
-      100
-    );
+    const limit = Math.min(Math.max(requestedLimit, 1), 100);
 
     const params = {
       limit,
       archived: req.query.archived === "true",
-      properties:
-        req.query.properties ||
-        taskReadProperties.join(","),
+      properties: req.query.properties || taskReadProperties.join(","),
     };
 
     if (req.query.after) {
       params.after = Number(req.query.after);
     }
 
-    const response = await hubspotApi.get(
-      "/crm/v3/objects/tasks",
-      {
-        params,
-      }
-    );
+    const response = await hubspotApi.get("/crm/v3/objects/tasks", {
+      params,
+    });
 
     return res.status(200).json({
       success: true,
@@ -778,14 +759,12 @@ app.get("/api/hubspot/tasks/:id", async (req, res) => {
     const taskId = validateTaskId(req.params.id);
 
     const response = await hubspotApi.get(
-      `/crm/v3/objects/tasks/${encodeURIComponent(
-        taskId
-      )}`,
+      `/crm/v3/objects/tasks/${encodeURIComponent(taskId)}`,
       {
         params: {
           properties: taskReadProperties.join(","),
         },
-      }
+      },
     );
 
     return res.status(200).json({
@@ -799,10 +778,7 @@ app.get("/api/hubspot/tasks/:id", async (req, res) => {
 
 app.post("/api/hubspot/tasks", async (req, res) => {
   try {
-    const properties = normalizeTaskProperties(
-      req.body,
-      true
-    );
+    const properties = normalizeTaskProperties(req.body, true);
 
     if (!properties.hs_task_subject) {
       return res.status(400).json({
@@ -811,38 +787,27 @@ app.post("/api/hubspot/tasks", async (req, res) => {
       });
     }
 
-    const task = await createHubSpotObject(
-      "tasks",
-      properties
-    );
+    const task = await createHubSpotObject("tasks", properties);
 
     let associationWarning = null;
 
-    const {
-      associatedObjectType,
-      associatedObjectId,
-    } = req.body;
+    const { associatedObjectType, associatedObjectId } = req.body;
 
-    if (
-      associatedObjectType &&
-      associatedObjectId
-    ) {
+    if (associatedObjectType && associatedObjectId) {
       try {
         await createDefaultAssociation(
           "tasks",
           task.id,
           associatedObjectType,
-          associatedObjectId
+          associatedObjectId,
         );
       } catch (associationError) {
         console.error(
           "TASK ASSOCIATION ERROR:",
-          associationError.response?.data ||
-            associationError.message
+          associationError.response?.data || associationError.message,
         );
 
-        associationWarning =
-          "Task created, but record association failed.";
+        associationWarning = "Task created, but record association failed.";
       }
     }
 
@@ -860,28 +825,20 @@ app.patch("/api/hubspot/tasks/:id", async (req, res) => {
   try {
     const taskId = validateTaskId(req.params.id);
 
-    const properties = normalizeTaskProperties(
-      req.body,
-      false
-    );
+    const properties = normalizeTaskProperties(req.body, false);
 
-    if (
-      Object.keys(properties).length === 0
-    ) {
+    if (Object.keys(properties).length === 0) {
       return res.status(400).json({
         success: false,
-        message:
-          "At least one task property is required",
+        message: "At least one task property is required",
       });
     }
 
     const response = await hubspotApi.patch(
-      `/crm/v3/objects/tasks/${encodeURIComponent(
-        taskId
-      )}`,
+      `/crm/v3/objects/tasks/${encodeURIComponent(taskId)}`,
       {
         properties,
-      }
+      },
     );
 
     return res.status(200).json({
@@ -898,9 +855,7 @@ app.delete("/api/hubspot/tasks/:id", async (req, res) => {
     const taskId = validateTaskId(req.params.id);
 
     await hubspotApi.delete(
-      `/crm/v3/objects/tasks/${encodeURIComponent(
-        taskId
-      )}`
+      `/crm/v3/objects/tasks/${encodeURIComponent(taskId)}`,
     );
 
     return res.status(200).json({
@@ -913,41 +868,24 @@ app.delete("/api/hubspot/tasks/:id", async (req, res) => {
   }
 });
 
-function normalizeTaskProperties(
-  body = {},
-  isCreate = false
-) {
+function normalizeTaskProperties(body = {}, isCreate = false) {
   const properties = {};
 
-  allowedTaskProperties.forEach(
-    (property) => {
-      const value = body[property];
+  allowedTaskProperties.forEach((property) => {
+    const value = body[property];
 
-      if (
-        value !== undefined &&
-        value !== null &&
-        String(value).trim() !== ""
-      ) {
-        properties[property] =
-          String(value).trim();
-      }
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      properties[property] = String(value).trim();
     }
-  );
+  });
 
   if (!properties.hs_task_status) {
     if (isCreate) {
-      properties.hs_task_status =
-        "NOT_STARTED";
+      properties.hs_task_status = "NOT_STARTED";
     }
-  } else if (
-    !allowedTaskStatuses.includes(
-      properties.hs_task_status
-    )
-  ) {
+  } else if (!allowedTaskStatuses.includes(properties.hs_task_status)) {
     const error = new Error(
-      `Invalid task status. Allowed values: ${allowedTaskStatuses.join(
-        ", "
-      )}`
+      `Invalid task status. Allowed values: ${allowedTaskStatuses.join(", ")}`,
     );
 
     error.statusCode = 400;
@@ -956,18 +894,13 @@ function normalizeTaskProperties(
 
   if (!properties.hs_task_priority) {
     if (isCreate) {
-      properties.hs_task_priority =
-        "MEDIUM";
+      properties.hs_task_priority = "MEDIUM";
     }
-  } else if (
-    !allowedTaskPriorities.includes(
-      properties.hs_task_priority
-    )
-  ) {
+  } else if (!allowedTaskPriorities.includes(properties.hs_task_priority)) {
     const error = new Error(
       `Invalid task priority. Allowed values: ${allowedTaskPriorities.join(
-        ", "
-      )}`
+        ", ",
+      )}`,
     );
 
     error.statusCode = 400;
@@ -978,15 +911,9 @@ function normalizeTaskProperties(
     if (isCreate) {
       properties.hs_task_type = "TODO";
     }
-  } else if (
-    !allowedTaskTypes.includes(
-      properties.hs_task_type
-    )
-  ) {
+  } else if (!allowedTaskTypes.includes(properties.hs_task_type)) {
     const error = new Error(
-      `Invalid task type. Allowed values: ${allowedTaskTypes.join(
-        ", "
-      )}`
+      `Invalid task type. Allowed values: ${allowedTaskTypes.join(", ")}`,
     );
 
     error.statusCode = 400;
@@ -995,25 +922,19 @@ function normalizeTaskProperties(
 
   if (!properties.hs_timestamp) {
     if (isCreate) {
-      properties.hs_timestamp =
-        new Date().toISOString();
+      properties.hs_timestamp = new Date().toISOString();
     }
   } else {
-    const parsedDate = new Date(
-      properties.hs_timestamp
-    );
+    const parsedDate = new Date(properties.hs_timestamp);
 
     if (Number.isNaN(parsedDate.getTime())) {
-      const error = new Error(
-        "Invalid task date/time"
-      );
+      const error = new Error("Invalid task date/time");
 
       error.statusCode = 400;
       throw error;
     }
 
-    properties.hs_timestamp =
-      parsedDate.toISOString();
+    properties.hs_timestamp = parsedDate.toISOString();
   }
 
   return properties;
@@ -1023,18 +944,14 @@ function validateTaskId(value) {
   const id = String(value || "").trim();
 
   if (!id) {
-    const error = new Error(
-      "Task ID is required"
-    );
+    const error = new Error("Task ID is required");
 
     error.statusCode = 400;
     throw error;
   }
 
   if (!/^[0-9]+$/.test(id)) {
-    const error = new Error(
-      "Task ID must contain numbers only"
-    );
+    const error = new Error("Task ID must contain numbers only");
 
     error.statusCode = 400;
     throw error;
@@ -1044,54 +961,35 @@ function validateTaskId(value) {
 }
 
 function sendTaskError(error, res) {
-  const statusCode =
-    error.statusCode ||
-    error.response?.status ||
-    500;
+  const statusCode = error.statusCode || error.response?.status || 500;
 
-  const hubSpotData =
-    error.response?.data || null;
+  const hubSpotData = error.response?.data || null;
 
-  console.error(
-    "TASK API ERROR STATUS:",
-    statusCode
-  );
+  console.error("TASK API ERROR STATUS:", statusCode);
 
   console.error(
     "TASK API ERROR DATA:",
-    JSON.stringify(
-      hubSpotData || error.message,
-      null,
-      2
-    )
+    JSON.stringify(hubSpotData || error.message, null, 2),
   );
 
   if (hubSpotData) {
     return res.status(statusCode).json({
       success: false,
-      message:
-        hubSpotData.message ||
-        "HubSpot task request failed",
+      message: hubSpotData.message || "HubSpot task request failed",
       statusCode,
-      category:
-        hubSpotData.category || null,
-      errors:
-        hubSpotData.errors || null,
-      context:
-        hubSpotData.context || null,
+      category: hubSpotData.category || null,
+      errors: hubSpotData.errors || null,
+      context: hubSpotData.context || null,
       raw: hubSpotData,
     });
   }
 
   return res.status(statusCode).json({
     success: false,
-    message:
-      error.message ||
-      "Task request failed",
+    message: error.message || "Task request failed",
     statusCode,
   });
 }
-
 
 /* -------------------- SEARCH -------------------- */
 
@@ -1138,43 +1036,25 @@ app.post("/api/hubspot/:objectType/search", async (req, res) => {
 
 /* -------------------- ASSOCIATIONS -------------------- */
 
-/* -------------------- ASSOCIATIONS -------------------- */
-
-const allowedAssociationTypes = [
-  "contacts",
-  "companies",
-  "deals",
-  "tasks",
-];
+const allowedAssociationTypes = ["contacts", "companies", "deals", "tasks"];
 
 app.get(
   "/api/hubspot/associations/:fromType/:fromId/:toType",
   async (req, res) => {
     try {
-      const fromType =
-        validateAssociationType(
-          req.params.fromType
-        );
+      const fromType = validateAssociationType(req.params.fromType);
 
-      const toType =
-        validateAssociationType(
-          req.params.toType
-        );
+      const toType = validateAssociationType(req.params.toType);
 
-      const fromId =
-        validateAssociationId(
-          req.params.fromId,
-          "Source record ID"
-        );
+      const fromId = validateAssociationId(
+        req.params.fromId,
+        "Source record ID",
+      );
 
       const response = await hubspotApi.get(
-        `/crm/v4/objects/${encodeURIComponent(
-          fromType
-        )}/${encodeURIComponent(
-          fromId
-        )}/associations/${encodeURIComponent(
-          toType
-        )}`
+        `/crm/v4/objects/${encodeURIComponent(fromType)}/${encodeURIComponent(
+          fromId,
+        )}/associations/${encodeURIComponent(toType)}`,
       );
 
       return res.status(200).json({
@@ -1182,108 +1062,71 @@ app.get(
         data: response.data,
       });
     } catch (error) {
-      return sendAssociationError(
-        error,
-        res
-      );
+      return sendAssociationError(error, res);
     }
-  }
+  },
 );
 
-app.post(
-  "/api/hubspot/associations",
-  async (req, res) => {
-    try {
-      const payload =
-        validateAssociationPayload(
-          req.body
-        );
+app.post("/api/hubspot/associations", async (req, res) => {
+  try {
+    const payload = validateAssociationPayload(req.body);
 
-      if (
-        payload.fromType ===
-          payload.toType &&
-        payload.fromId === payload.toId
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "A record cannot be associated with itself.",
-        });
-      }
-
-      const response =
-        await createAssociationLink(
-          payload
-        );
-
-      return res.status(201).json({
-        success: true,
-        data: response,
-        association: payload,
+    if (
+      payload.fromType === payload.toType &&
+      payload.fromId === payload.toId
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "A record cannot be associated with itself.",
       });
-    } catch (error) {
-      return sendAssociationError(
-        error,
-        res
-      );
     }
+
+    const response = await createAssociationLink(payload);
+
+    return res.status(201).json({
+      success: true,
+      data: response,
+      association: payload,
+    });
+  } catch (error) {
+    return sendAssociationError(error, res);
   }
-);
+});
 
-app.delete(
-  "/api/hubspot/associations",
-  async (req, res) => {
-    try {
-      const payload =
-        validateAssociationPayload(
-          req.body
-        );
+app.delete("/api/hubspot/associations", async (req, res) => {
+  try {
+    const payload = validateAssociationPayload(req.body);
 
-      await hubspotApi.delete(
-        `/crm/v4/objects/${encodeURIComponent(
-          payload.fromType
-        )}/${encodeURIComponent(
-          payload.fromId
-        )}/associations/${encodeURIComponent(
-          payload.toType
-        )}/${encodeURIComponent(
-          payload.toId
-        )}`
-      );
+    await hubspotApi.delete(
+      `/crm/v4/objects/${encodeURIComponent(
+        payload.fromType,
+      )}/${encodeURIComponent(
+        payload.fromId,
+      )}/associations/${encodeURIComponent(
+        payload.toType,
+      )}/${encodeURIComponent(payload.toId)}`,
+    );
 
-      return res.status(200).json({
-        success: true,
-        deletedAssociation: payload,
-        message:
-          "Association deleted successfully",
-      });
-    } catch (error) {
-      return sendAssociationError(
-        error,
-        res
-      );
-    }
+    return res.status(200).json({
+      success: true,
+      deletedAssociation: payload,
+      message: "Association deleted successfully",
+    });
+  } catch (error) {
+    return sendAssociationError(error, res);
   }
-);
+});
 
-function validateAssociationType(
-  value
-) {
-  const objectType = String(
-    value || ""
-  )
+function validateAssociationType(value) {
+  const objectType = String(value || "")
     .trim()
     .toLowerCase();
 
-  if (
-    !allowedAssociationTypes.includes(
-      objectType
-    )
-  ) {
+  if (!allowedAssociationTypes.includes(objectType)) {
     const error = new Error(
       `Invalid association object type. Allowed values: ${allowedAssociationTypes.join(
-        ", "
-      )}`
+        ", ",
+      )}`,
     );
 
     error.statusCode = 400;
@@ -1293,27 +1136,20 @@ function validateAssociationType(
   return objectType;
 }
 
-function validateAssociationId(
-  value,
-  label = "Record ID"
-) {
+function validateAssociationId(value, label = "Record ID") {
   const id = String(value || "")
     .replace(/\s+/g, "")
     .trim();
 
   if (!id) {
-    const error = new Error(
-      `${label} is required`
-    );
+    const error = new Error(`${label} is required`);
 
     error.statusCode = 400;
     throw error;
   }
 
   if (!/^[0-9]+$/.test(id)) {
-    const error = new Error(
-      `${label} must contain numbers only`
-    );
+    const error = new Error(`${label} must contain numbers only`);
 
     error.statusCode = 400;
     throw error;
@@ -1322,30 +1158,14 @@ function validateAssociationId(
   return id;
 }
 
-function validateAssociationPayload(
-  body = {}
-) {
-  const fromType =
-    validateAssociationType(
-      body.fromType
-    );
+function validateAssociationPayload(body = {}) {
+  const fromType = validateAssociationType(body.fromType);
 
-  const toType =
-    validateAssociationType(
-      body.toType
-    );
+  const toType = validateAssociationType(body.toType);
 
-  const fromId =
-    validateAssociationId(
-      body.fromId,
-      "Source record ID"
-    );
+  const fromId = validateAssociationId(body.fromId, "Source record ID");
 
-  const toId =
-    validateAssociationId(
-      body.toId,
-      "Target record ID"
-    );
+  const toId = validateAssociationId(body.toId, "Target record ID");
 
   return {
     fromType,
@@ -1368,11 +1188,16 @@ async function createAssociationLink(
     );
 
   const labels =
-    labelsResponse.data.results || [];
+    labelsResponse.data?.results || [];
+
+  console.log(
+    "AVAILABLE ASSOCIATION LABELS:",
+    JSON.stringify(labels, null, 2)
+  );
 
   if (labels.length === 0) {
     const error = new Error(
-      `No valid association type exists between ${payload.fromType} and ${payload.toType}`
+      `No association type exists between ${payload.fromType} and ${payload.toType}`
     );
 
     error.statusCode = 400;
@@ -1385,25 +1210,37 @@ async function createAssociationLink(
         item.category === "HUBSPOT_DEFINED"
     ) || labels[0];
 
-  if (!selectedLabel?.typeId) {
+  const associationTypeId = Number(
+    selectedLabel.typeId
+  );
+
+  if (
+    !Number.isInteger(associationTypeId) ||
+    associationTypeId <= 0
+  ) {
     const error = new Error(
-      "HubSpot association type ID was not found."
+      "Invalid association type ID returned by HubSpot."
     );
 
     error.statusCode = 400;
     throw error;
   }
 
+  const body = [
+    {
+      associationCategory:
+        selectedLabel.category ||
+        "HUBSPOT_DEFINED",
+      associationTypeId,
+    },
+  ];
+
   console.log(
-    "USING ASSOCIATION TYPE:",
+    "CREATING ASSOCIATION:",
     JSON.stringify(
       {
-        fromType: payload.fromType,
-        toType: payload.toType,
-        category:
-          selectedLabel.category,
-        typeId: selectedLabel.typeId,
-        label: selectedLabel.label,
+        payload,
+        body,
       },
       null,
       2
@@ -1420,72 +1257,42 @@ async function createAssociationLink(
     )}/${encodeURIComponent(
       payload.toId
     )}`,
-    [
-      {
-        associationCategory:
-          selectedLabel.category,
-        associationTypeId:
-          selectedLabel.typeId,
-      },
-    ]
+    body
   );
 
   return response.data;
 }
 
+function sendAssociationError(error, res) {
+  const statusCode = error.statusCode || error.response?.status || 500;
 
-function sendAssociationError(
-  error,
-  res
-) {
-  const statusCode =
-    error.statusCode ||
-    error.response?.status ||
-    500;
+  const hubSpotData = error.response?.data || null;
 
-  const hubSpotData =
-    error.response?.data || null;
-
-  console.error(
-    "ASSOCIATION API ERROR STATUS:",
-    statusCode
-  );
+  console.error("ASSOCIATION API ERROR STATUS:", statusCode);
 
   console.error(
     "ASSOCIATION API ERROR DATA:",
-    JSON.stringify(
-      hubSpotData || error.message,
-      null,
-      2
-    )
+    JSON.stringify(hubSpotData || error.message, null, 2),
   );
 
   if (hubSpotData) {
     return res.status(statusCode).json({
       success: false,
-      message:
-        hubSpotData.message ||
-        "HubSpot association request failed",
+      message: hubSpotData.message || "HubSpot association request failed",
       statusCode,
-      category:
-        hubSpotData.category || null,
-      errors:
-        hubSpotData.errors || null,
-      context:
-        hubSpotData.context || null,
+      category: hubSpotData.category || null,
+      errors: hubSpotData.errors || null,
+      context: hubSpotData.context || null,
       raw: hubSpotData,
     });
   }
 
   return res.status(statusCode).json({
     success: false,
-    message:
-      error.message ||
-      "Association request failed",
+    message: error.message || "Association request failed",
     statusCode,
   });
 }
-
 
 async function createDefaultAssociation(fromType, fromId, toType, toId) {
   const response = await hubspotApi.put(
